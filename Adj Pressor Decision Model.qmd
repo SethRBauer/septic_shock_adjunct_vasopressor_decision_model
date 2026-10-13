@@ -2351,7 +2351,7 @@ Create a basic (main effects) {parsnip} `recipe()` object for the model. Include
 ```{r}
 avp_m1_lr_rec_main <-
   recipe(response ~ ., data = avp) |>
-  # Declare age, sex, and race_eth in a bystander role to keep it in the 
+  # Declare age, sex, and race_eth in a bystander role to keep them in the 
   # resampling dataset for future use in fairness checks
   update_role(age, sex, race_eth, new_role = "bystander") |>
   # Single (linear regression) imputation for missing quantitatitve predictors
@@ -2427,7 +2427,7 @@ In the call below add the natural spline term to determine if it improve model f
 ```{r}
 avp_m1_lr_rec_ns <-
   recipe(response ~ ., data = avp) |>
-  # Declare age, sex, and race_eth in a bystander role to keep it in the 
+  # Declare age, sex, and race_eth in a bystander role to keep them in the 
   # resampling dataset for future use in fairness checks
   update_role(age, sex, race_eth, new_role = "bystander") |>
   # Single (linear regression) imputation for missing quantitatitve predictors
@@ -2716,7 +2716,7 @@ Fit a random forest model with the "ranger" engine.
 
 avp_m3_rf_rec <-
   recipe(response ~ ., data = avp) |>
-  # Declare age, sex, and race_eth in a bystander role to keep it in the 
+  # Declare age, sex, and race_eth in a bystander role to keep them in the 
   # resampling dataset for future use in fairness checks
   update_role(age, sex, race_eth, new_role = "bystander") |>
   # Single (linear regression) imputation for missing quantitative predictors
@@ -3743,7 +3743,7 @@ As noted in @sec-miss-oh, there are missing data in the same three variables as 
 # Main effects recipe
 epi_m1_lr_rec_main <-
   recipe(response ~ ., data = epi) |>
-  # Declare age, sex, and race_eth in a bystander role to keep it in the 
+  # Declare age, sex, and race_eth in a bystander role to keep them in the 
   # resampling dataset for future use in fairness checks
   update_role(age, sex, race_eth, new_role = "bystander") |>
   # Single (linear regression) imputation for missing quantitatitve predictors
@@ -4043,7 +4043,7 @@ Fit a random forest model.
 ```{r}
 epi_m3_rf_rec <-
   recipe(response ~ ., data = epi) |>
-  # Declare age, sex, and race_eth in a bystander role to keep it in the 
+  # Declare age, sex, and race_eth in a bystander role to keep them in the 
   # resampling dataset for future use in fairness checks
   update_role(age, sex, race_eth, new_role = "bystander") |>
   # Single (linear regression) imputation for missing quantitative predictors
@@ -5271,7 +5271,7 @@ Fit a random forest model.
 ```{r}
 pe_m3_rf_rec <-
   recipe(response ~ ., data = pe) |>
-  # Declare age, sex, race_eth in a bystander role to keep it in the 
+  # Declare age, sex, race_eth in a bystander role to keep them in the 
   # resampling dataset for future use in fairness checks
   update_role(age, sex, race_eth, new_role = "bystander") |>
   # Single (linear regression) imputation for missing quantitative predictors
@@ -6181,7 +6181,7 @@ The multivariable model has better metrics than the simple model using `neq` alo
 
 Here, address the question "Which variables matter for the prediction models?". Approach this question with permutation importance.
 
-First, define a prediction wrapper. Then, use the `vi()` function from the `{vip}` package to determine variable importance based on AUROC through 100 simulations. The output of the function can roughly be interpreted as the average decrease in AUROC when that variable is randomly permuted
+First, define a prediction wrapper. Then, use the `vi()` function from the `{vip}` package to determine variable importance based on AUROC through 100 simulations. The output of the function can roughly be interpreted as the average decrease in AUROC when that variable is randomly permuted.
 
 ```{r}
 pred_fun <- function(object, newdata) {
@@ -6271,7 +6271,7 @@ ggsave(
 
 ## Feature Importance
 
-Here, address the question "How do the variables (features) influence individual predictions?". Approach this question with SHapley Additive exPlanations (SHAP) values.
+Here, address the question "How do the variables (features) influence individual predictions?". Approach this question with SHapley Additive exPlanations (SHAP) values. Use the `explain()` function from the `{fastshap}` package to determine SHAP values through 200 Monte Carlo simulations. Then, plot values with a beeswarm plot.
 
 First, isolate predictor data used by each fitted model.
 
@@ -6281,7 +6281,7 @@ epi_x <- epi |> select(-response)
 pe_x <- pe |> select(-response)
 ```
 
-Then, build SHAP values and plot with a beeswarm plot.
+Then, build SHAP values and plot.
 
 ```{r}
 #| fig-height: 8
@@ -6347,9 +6347,133 @@ ggsave(
   )
 ```
 
+## Calibration
+
+Generate alternative calibration plots to improve readability, particularly for prediction density distribution. These alternative calibration plots use the data derived with the `pmcalibration()` function but utilize `ggplot2()` for plotting instead of base plots that cannot be adjusted in the `pmcalibration()` function.
+
+```{r}
+# Create reusable function for plotting curves
+plot_calibration <- function(cal_obj, cal_dat, bin_width = 0.01) {
+
+  #------------------------------------------
+  # Distribution data
+  #------------------------------------------
+  dist_dat <- cal_obj$data |>
+    mutate(bin = floor(p / bin_width) * bin_width + bin_width / 2) |>
+    group_by(y, bin) |>
+    summarise(n = n(), .groups = "drop")
+
+  dist_dat <- dist_dat |>
+    mutate(n_scaled = n / max(n))
+
+  #------------------------------------------
+  # Dynamic label position
+  #------------------------------------------
+  label_x <- min(max(cal_obj$data$p) + 0.05, 0.85)
+
+  #------------------------------------------
+  # Calibration plot
+  #------------------------------------------
+  p_cal <- ggplot(cal_dat, aes(x = p, y = p_c)) +
+    geom_ribbon(aes(ymin = lower, ymax = upper),
+                fill = "grey75", alpha = 0.5) +
+    geom_abline(intercept = 0, slope = 1,
+                linetype = 2, linewidth = 0.2, color = "red") +
+    geom_line(linewidth = 0.6, color = "black") +
+    scale_x_continuous(limits = c(0, 1), expand = c(0, 0)) +
+    scale_y_continuous(limits = c(0, 1), expand = c(0, 0)) +
+    labs(y = "Estimated Probability", x = NULL) +
+    theme_minimal(base_size = 18) +
+    theme(
+      text = element_text(family = "Arial"),
+      panel.grid.major = element_blank(),
+      panel.grid.minor = element_blank(),
+      axis.line = element_line(color = "black"),
+      axis.ticks = element_line(color = "black"),
+      axis.title.y = element_text(family = "Arial"),
+      axis.text.y  = element_text(family = "Arial"),
+      axis.title.x = element_blank(),
+      axis.text.x = element_blank(),
+      axis.ticks.x = element_blank(),
+      axis.line.x = element_blank()
+      )
+
+  #------------------------------------------
+  # Prediction distribution plot
+  #------------------------------------------
+
+  p_dist <- ggplot() +
+    geom_hline(yintercept = 0, linewidth = 0.4) +
+    geom_segment(
+      data = filter(dist_dat, y == 1),
+      aes(x = bin, xend = bin, y = 0, yend = n_scaled),
+      linewidth = 0.35
+      ) +
+    geom_segment(
+      data = filter(dist_dat, y == 0),
+      aes(x = bin, xend = bin, y = 0, yend = -n_scaled),
+      linewidth = 0.35
+      ) +
+    annotate("text", x = label_x, y = 0.35,
+             label = "Response", size = 3) +
+    annotate("text", x = label_x, y = -0.35,
+             label = "No Response", size = 3) +
+    scale_x_continuous(limits = c(0, 1), expand = c(0, 0)) +
+    labs(x = "Predicted Probability") +
+    theme_minimal(base_size = 18) +
+    theme(
+      text = element_text(family = "Arial"),
+      panel.grid.major = element_blank(),
+      panel.grid.minor = element_blank(),
+      axis.line = element_line(color = "black"),
+      axis.ticks = element_line(color = "black"),
+      axis.title.x = element_text(family = "Arial"),
+      axis.title.y = element_blank(),
+      axis.text.y = element_blank(),
+      axis.ticks.y = element_blank()
+      )
+
+  p_cal / p_dist + plot_layout(heights = c(5, 1))
+}
+
+# Extract data from pmcalibration() objects
+avp_cal_dat <- get_curve(avp_lr_cal)
+epi_cal_dat <- get_curve(epi_xgb_cal)
+pe_cal_dat <- get_curve(pe_rf_cal)
+
+# Plot and save
+(p_avp <- plot_calibration(avp_lr_cal, avp_cal_dat, bin_width = 0.01))
+(p_epi <- plot_calibration(epi_xgb_cal, epi_cal_dat, bin_width = 0.01))
+(p_pe  <- plot_calibration(pe_rf_cal, pe_cal_dat, bin_width = 0.01))
+
+ggsave(
+  "avp_calibration.tiff",
+  plot = p_avp,
+  device = ragg::agg_tiff,
+  width = 6, height = 6,
+  units = "in", dpi = 300
+  )
+
+ggsave(
+  "epi_calibration.tiff",
+  plot = p_epi,
+  device = ragg::agg_tiff,
+  width = 6, height = 6,
+  units = "in", dpi = 300
+  )
+
+ggsave(
+  "pe_calibration.tiff",
+  plot = p_pe,
+  device = ragg::agg_tiff,
+  width = 6, height = 6,
+  units = "in", dpi = 300
+  )
+```
+
 ## Decision Curve Analyses
 
-Decision curve analyses of only the final/selected model by adjunctive vasopressor. 
+Show decision curve analyses of only the final/selected model by adjunctive vasopressor. 
 
 ```{r}
 #| warning: false
@@ -6620,7 +6744,7 @@ ggsave(
 
 ## Model Performance by Subgroup
 
-Here, assess model apparent performance (AUROC and Brier score) across clinically important subgroups. Utilize the out-of-fold predictions from each model, which corrects for optimism. Specifically, evaluate subgroup performance using out-of-fold predictions 10-fold cross-validation averaged over the 5 repeats. Then, obtain confidence intervals using 500 bootstrap resamples within each subgroup.
+Here, assess model performance (AUROC and Brier score) across clinically important subgroups. Utilize the out-of-fold predictions from each model, which corrects for optimism. Specifically, evaluate subgroup performance using out-of-fold predictions 10-fold cross-validation averaged over the 5 repeats. Then, obtain confidence intervals using 500 bootstrap resamples within each subgroup.
 
 First, define a function to evaluate the models through bootstrap resampling (500 resamples). Then, define a function to create a reusable prediction helper.
 
